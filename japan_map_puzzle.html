@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🗾 日本地図パズル</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Hiragino Sans', 'Meiryo', 'Helvetica Neue', Arial, sans-serif;
+      background: #0f1729;
+      color: #e0e8ff;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    #header {
+      display: flex;
+      align-items: center;
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.05);
+      border-bottom: 1px solid rgba(100,140,255,0.2);
+      gap: 20px;
+      flex-shrink: 0;
+    }
+
+    h1 { font-size: 22px; color: #c8d8ff; letter-spacing: 2px; }
+
+    #stats {
+      display: flex;
+      gap: 24px;
+      margin-left: 20px;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .stat-value {
+      font-size: 22px;
+      font-weight: bold;
+      color: #7bc8ff;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #8899bb;
+      margin-top: 2px;
+    }
+
+    #instruction {
+      margin-left: auto;
+      font-size: 12px;
+      color: #7888aa;
+      line-height: 1.5;
+    }
+
+    #clear-btn {
+      padding: 7px 18px;
+      background: transparent;
+      color: #8899bb;
+      border: 1.5px solid #334466;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+      white-space: nowrap;
+    }
+    #clear-btn:hover {
+      background: rgba(200,80,80,0.15);
+      color: #ff8888;
+      border-color: #884444;
+    }
+
+    /* ── Game Area ── */
+    #game-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Side Panel ── */
+    #pieces-panel {
+      width: 155px;
+      flex-shrink: 0;
+      padding: 10px 8px;
+      background: rgba(255,255,255,0.02);
+      border-right: 1px solid rgba(100,140,255,0.15);
+      overflow-y: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-content: flex-start;
+    }
+
+    #pieces-panel::-webkit-scrollbar { width: 4px; }
+    #pieces-panel::-webkit-scrollbar-track { background: transparent; }
+    #pieces-panel::-webkit-scrollbar-thumb { background: #334; border-radius: 2px; }
+
+    .piece {
+      padding: 5px 8px;
+      background: #1a3060;
+      border: 1.5px solid #2a4a90;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      user-select: none;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      color: #c0d0ff;
+    }
+
+    .piece:hover { background: #2a4a90; border-color: #6090e0; transform: translateY(-1px); }
+
+    .piece.selected {
+      background: #c07800;
+      border-color: #ffc000;
+      color: #fff;
+      box-shadow: 0 0 10px rgba(255,180,0,0.4);
+      transform: translateY(-1px);
+    }
+
+    .piece.placed {
+      opacity: 0.4;
+      cursor: default;
+      transform: none;
+    }
+    .piece.placed:hover { background: #1a3060; border-color: #2a4a90; transform: none; }
+
+    /* ── Map Area ── */
+    #map-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #map-loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #8899bb;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(100,140,255,0.2);
+      border-top-color: #7bc8ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #map-svg { display: none; }
+
+    /* ── Map Paths ── */
+    .prefecture {
+      fill: #1e3a5f;
+      stroke: #4a6fa5;
+      stroke-width: 0.7;
+      cursor: pointer;
+      transition: fill 0.25s;
+    }
+
+    .prefecture:hover { fill: #5ab4e8; stroke: #a0d8ff; stroke-width: 1.5; filter: drop-shadow(0 0 4px rgba(100,200,255,0.6)); }
+    .prefecture.placed-on-map { cursor: default; }
+    .prefecture.placed-on-map:hover { /* keep color */ }
+
+    .pref-label {
+      font-size: 8.5px;
+      fill: white;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s;
+      font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+    }
+
+    .pref-label.visible { opacity: 1; }
+
+    /* ── Progress Bar ── */
+    #progress-bar-wrap {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+    }
+
+    #progress-bar-bg {
+      height: 6px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4a90e2, #7bc8ff);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    #progress-text {
+      text-align: center;
+      font-size: 11px;
+      color: #7888aa;
+      margin-top: 4px;
+    }
+
+    /* ── Cursor Indicator ── */
+    #cursor-label {
+      position: fixed;
+      pointer-events: none;
+      z-index: 100;
+      background: #c07800;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      display: none;
+      white-space: nowrap;
+      transform: translate(10px, -50%);
+    }
+
+    /* ── Feedback Flash ── */
+    @keyframes flashGreen {
+      0%   { filter: brightness(2); }
+      100% { filter: brightness(1); }
+    }
+
+    @keyframes flashRed {
+      0%, 100% { fill: #1e3a5f; }
+      50%       { fill: #8b1a1a; }
+    }
+
+    .flash-correct { animation: flashGreen 0.5s ease; }
+
+    /* ── Win Screen ── */
+    #win-screen {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.88);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 200;
+    }
+
+    #win-screen.active { display: flex; }
+
+    .win-firework { font-size: 60px; animation: bounce 0.6s ease infinite alternate; }
+    @keyframes bounce { from { transform: scale(1); } to { transform: scale(1.15); } }
+
+    #win-screen h2 { font-size: 42px; color: #ffd700; letter-spacing: 4px; }
+    #win-screen .win-sub { font-size: 18px; color: #c0d0ff; }
+    #win-screen .win-time-label { font-size: 14px; color: #7888aa; }
+    #win-screen .win-time-value { font-size: 36px; font-weight: bold; color: #7bc8ff; }
+
+    #restart-btn {
+      margin-top: 10px;
+      padding: 12px 36px;
+      background: #2a5298;
+      color: white;
+      border: 2px solid #4a80d8;
+      border-radius: 8px;
+      font-size: 16px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    #restart-btn:hover { background: #3a6bc8; transform: translateY(-2px); }
+
+    /* ── Tooltip ── */
+    #tooltip {
+      position: fixed;
+      background: rgba(0,0,0,0.8);
+      color: #e0e8ff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 50;
+      display: none;
+    }
+
+    /* ── Region Legend ── */
+    #legend {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 11px;
+      line-height: 1.8;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div id="header">
+  <h1>🗾 日本地図パズル</h1>
+  <div id="stats">
+    <div class="stat">
+      <span class="stat-value" id="placed-count">0</span>
+      <span class="stat-label">配置済み</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">47</span>
+      <span class="stat-label">都道府県</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value" id="timer">0:00</span>
+      <span class="stat-label">タイム</span>
+    </div>
+  </div>
+  <div id="instruction">
+    ① 左の都道府県名をクリック → ② 地図上の正しい場所をクリック
+  </div>
+  <button id="clear-btn" onclick="confirmClear()">↺ リセット</button>
+</div>
+
+<!-- ── Game Area ── -->
+<div id="game-area">
+  <div id="pieces-panel"></div>
+  <div id="map-container">
+    <div id="map-loading">
+      <div class="spinner"></div>
+      <div>地図データを読み込み中…</div>
+    </div>
+    <svg id="map-svg"></svg>
+    <div id="progress-bar-wrap">
+      <div id="progress-bar-bg"><div id="progress-bar-fill"></div></div>
+      <div id="progress-text">0 / 47</div>
+    </div>
+    <div id="legend"></div>
+  </div>
+</div>
+
+<!-- ── Cursor Label ── -->
+<div id="cursor-label"></div>
+<div id="tooltip"></div>
+
+<!-- ── Win Screen ── -->
+<div id="win-screen">
+  <div class="win-firework">🎊</div>
+  <h2>完　成！</h2>
+  <div class="win-sub">全47都道府県を配置しました！</div>
+  <div class="win-time-label">クリアタイム</div>
+  <div class="win-time-value" id="win-time-value">—</div>
+  <button id="restart-btn" onclick="restartGame()">もう一度プレイ ↺</button>
+</div>
+
+<script>
+// ───────────────────────────────────────────
+//  Prefecture Data
+// ───────────────────────────────────────────
+const PREFECTURES = [
+  {id:1,  name:'北海道',   en:'Hokkaido',    region:'hokkaido'},
+  {id:2,  name:'青森県',   en:'Aomori',      region:'tohoku'},
+  {id:3,  name:'岩手県',   en:'Iwate',       region:'tohoku'},
+  {id:4,  name:'宮城県',   en:'Miyagi',      region:'tohoku'},
+  {id:5,  name:'秋田県',   en:'Akita',       region:'tohoku'},
+  {id:6,  name:'山形県',   en:'Yamagata',    region:'tohoku'},
+  {id:7,  name:'福島県',   en:'Fukushima',   region:'tohoku'},
+  {id:8,  name:'茨城県',   en:'Ibaraki',     region:'kanto'},
+  {id:9,  name:'栃木県',   en:'Tochigi',     region:'kanto'},
+  {id:10, name:'群馬県',   en:'Gunma',       region:'kanto'},
+  {id:11, name:'埼玉県',   en:'Saitama',     region:'kanto'},
+  {id:12, name:'千葉県',   en:'Chiba',       region:'kanto'},
+  {id:13, name:'東京都',   en:'Tokyo',       region:'kanto'},
+  {id:14, name:'神奈川県', en:'Kanagawa',    region:'kanto'},
+  {id:15, name:'新潟県',   en:'Niigata',     region:'chubu'},
+  {id:16, name:'富山県',   en:'Toyama',      region:'chubu'},
+  {id:17, name:'石川県',   en:'Ishikawa',    region:'chubu'},
+  {id:18, name:'福井県',   en:'Fukui',       region:'chubu'},
+  {id:19, name:'山梨県',   en:'Yamanashi',   region:'chubu'},
+  {id:20, name:'長野県',   en:'Nagano',      region:'chubu'},
+  {id:21, name:'岐阜県',   en:'Gifu',        region:'chubu'},
+  {id:22, name:'静岡県',   en:'Shizuoka',    region:'chubu'},
+  {id:23, name:'愛知県',   en:'Aichi',       region:'chubu'},
+  {id:24, name:'三重県',   en:'Mie',         region:'kinki'},
+  {id:25, name:'滋賀県',   en:'Shiga',       region:'kinki'},
+  {id:26, name:'京都府',   en:'Kyoto',       region:'kinki'},
+  {id:27, name:'大阪府',   en:'Osaka',       region:'kinki'},
+  {id:28, name:'兵庫県',   en:'Hyogo',       region:'kinki'},
+  {id:29, name:'奈良県',   en:'Nara',        region:'kinki'},
+  {id:30, name:'和歌山県', en:'Wakayama',    region:'kinki'},
+  {id:31, name:'鳥取県',   en:'Tottori',     region:'chugoku'},
+  {id:32, name:'島根県',   en:'Shimane',     region:'chugoku'},
+  {id:33, name:'岡山県',   en:'Okayama',     region:'chugoku'},
+  {id:34, name:'広島県',   en:'Hiroshima',   region:'chugoku'},
+  {id:35, name:'山口県',   en:'Yamaguchi',   region:'chugoku'},
+  {id:36, name:'徳島県',   en:'Tokushima',   region:'shikoku'},
+  {id:37, name:'香川県',   en:'Kagawa',      region:'shikoku'},
+  {id:38, name:'愛媛県',   en:'Ehime',       region:'shikoku'},
+  {id:39, name:'高知県',   en:'Kochi',       region:'shikoku'},
+  {id:40, name:'福岡県',   en:'Fukuoka',     region:'kyushu'},
+  {id:41, name:'佐賀県',   en:'Saga',        region:'kyushu'},
+  {id:42, name:'長崎県',   en:'Nagasaki',    region:'kyushu'},
+  {id:43, name:'熊本県',   en:'Kumamoto',    region:'kyushu'},
+  {id:44, name:'大分県',   en:'Oita',        region:'kyushu'},
+  {id:45, name:'宮崎県',   en:'Miyazaki',    region:'kyushu'},
+  {id:46, name:'鹿児島県', en:'Kagoshima',   region:'kyushu'},
+  {id:47, name:'沖縄県',   en:'Okinawa',     region:'ryukyu'},
+];
+
+const REGION_INFO = {
+  hokkaido: { label:'北海道',  color:'#e91e63' },
+  tohoku:   { label:'東北',    color:'#9c27b0' },
+  kanto:    { label:'関東',    color:'#3f51b5' },
+  chubu:    { label:'中部',    color:'#0288d1' },
+  kinki:    { label:'近畿',    color:'#00897b' },
+  chugoku:  { label:'中国',    color:'#558b2f' },
+  shikoku:  { label:'四国',    color:'#f57c00' },
+  kyushu:   { label:'九州',    color:'#c62828' },
+  ryukyu:   { label:'沖縄',    color:'#6d4c41' },
+};
+
+// ───────────────────────────────────────────
+//  Game State
+// ───────────────────────────────────────────
+let selectedPiece = null;   // { id, name, region }
+let placedSet     = new Set();
+let placedCount   = 0;
+let seconds       = 0;
+let timerInterval = null;
+let pathGen       = null;
+let geoFeatures   = {};     // id → GeoJSON feature
+
+// ───────────────────────────────────────────
+//  Timer
+// ───────────────────────────────────────────
+function startTimer() {
+  seconds = 0;
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    seconds++;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    document.getElementById('timer').textContent =
+      `${m}:${s.toString().padStart(2,'0')}`;
+  }, 1000);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}分 ${s.toString().padStart(2,'0')}秒`;
+}
+
+// ───────────────────────────────────────────
+//  Shuffle
+// ───────────────────────────────────────────
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ───────────────────────────────────────────
+//  Pieces Panel
+// ───────────────────────────────────────────
+function createPieces() {
+  const panel = document.getElementById('pieces-panel');
+  panel.innerHTML = '';
+  const shuffled = shuffle(PREFECTURES);
+  shuffled.forEach(pref => {
+    const el = document.createElement('div');
+    el.className = 'piece';
+    el.textContent = pref.name;
+    el.dataset.id = pref.id;
+    el.id = `piece-${pref.id}`;
+    el.addEventListener('click', () => onPieceClick(pref, el));
+    panel.appendChild(el);
+  });
+}
+
+function onPieceClick(pref, el) {
+  if (placedSet.has(pref.id)) return;
+
+  const prevSelected = document.querySelector('.piece.selected');
+  if (prevSelected) prevSelected.classList.remove('selected');
+
+  if (selectedPiece && selectedPiece.id === pref.id) {
+    selectedPiece = null;
+    hideCursorLabel();
+    return;
+  }
+
+  el.classList.add('selected');
+  selectedPiece = pref;
+}
+
+// ───────────────────────────────────────────
+//  Cursor Label (follows mouse when piece selected)
+// ───────────────────────────────────────────
+const cursorLabel = document.getElementById('cursor-label');
+
+document.addEventListener('mousemove', e => {
+  if (!selectedPiece) return;
+  cursorLabel.style.left = e.clientX + 'px';
+  cursorLabel.style.top  = e.clientY + 'px';
+  cursorLabel.style.display = 'block';
+  cursorLabel.textContent = selectedPiece.name;
+});
+
+function hideCursorLabel() {
+  cursorLabel.style.display = 'none';
+}
+
+// ───────────────────────────────────────────
+//  Map Rendering
+// ───────────────────────────────────────────
+function initMap(geojson) {
+  const container = document.getElementById('map-container');
+  const rect = container.getBoundingClientRect();
+  const W = rect.width  || 720;
+  const H = rect.height || 580;
+
+  const svg = d3.select('#map-svg')
+    .attr('width',  W)
+    .attr('height', H);
+
+  const projection = d3.geoMercator()
+    .fitExtent([[10, 10], [W - 10, H - 30]], geojson);
+
+  pathGen = d3.geoPath().projection(projection);
+
+  const g = svg.append('g').attr('id', 'prefectures');
+
+  geojson.features.forEach(feature => {
+    // Resolve prefecture ID from feature properties
+    let prefId = null;
+
+    // Try common property keys
+    const p = feature.properties || {};
+    prefId =
+      p.id        !== undefined ? +p.id :
+      p.N03_001   !== undefined ? null  : // different schema
+      feature.id  !== undefined ? +feature.id :
+      null;
+
+    // Fallback: match by Japanese name
+    if (!prefId && p.nam_ja) {
+      const match = PREFECTURES.find(pr => pr.name === p.nam_ja);
+      if (match) prefId = match.id;
+    }
+    if (!prefId && p.name) {
+      const match = PREFECTURES.find(pr => pr.name === p.name || pr.en === p.name);
+      if (match) prefId = match.id;
+    }
+
+    if (!prefId || prefId < 1 || prefId > 47) return;
+
+    geoFeatures[prefId] = feature;
+
+    const pref = PREFECTURES.find(pr => pr.id === prefId);
+    if (!pref) return;
+
+    // Draw path
+    g.append('path')
+      .datum(feature)
+      .attr('d', pathGen)
+      .attr('class', 'prefecture')
+      .attr('id', `map-pref-${prefId}`)
+      .on('click', () => onMapClick(prefId))
+      .on('mouseover', function(event) {
+        if (placedSet.has(prefId)) return;
+        d3.select(this).attr('fill', '#5ab4e8');
+        showTooltip(event, pref.name);
+      })
+      .on('mousemove', showTooltipMove)
+      .on('mouseout', function() {
+        if (placedSet.has(prefId)) return;
+        d3.select(this).attr('fill', '#1e3a5f');
+        hideTooltip();
+      });
+
+    // Label (hidden until placed)
+    const centroid = pathGen.centroid(feature);
+    if (!isNaN(centroid[0])) {
+      g.append('text')
+        .attr('class', 'pref-label')
+        .attr('id', `label-${prefId}`)
+        .attr('x', centroid[0])
+        .attr('y', centroid[1])
+        .text(pref.name.replace('県','').replace('府','').replace('都','').replace('道',''));
+    }
+  });
+
+  // Build legend
+  buildLegend();
+
+  // Show map
+  document.getElementById('map-loading').style.display = 'none';
+  document.getElementById('map-svg').style.display = 'block';
+}
+
+// ───────────────────────────────────────────
+//  Tooltip
+// ───────────────────────────────────────────
+const tooltip = document.getElementById('tooltip');
+
+function showTooltip(event, text) {
+  if (selectedPiece) return; // cursor label handles this
+  tooltip.textContent = text;
+  tooltip.style.display = 'block';
+  tooltip.style.left = (event.clientX + 14) + 'px';
+  tooltip.style.top  = (event.clientY - 10) + 'px';
+}
+
+function showTooltipMove(event) {
+  if (tooltip.style.display !== 'none') {
+    tooltip.style.left = (event.clientX + 14) + 'px';
+    tooltip.style.top  = (event.clientY - 10) + 'px';
+  }
+}
+
+function hideTooltip() {
+  tooltip.style.display = 'none';
+}
+
+// ───────────────────────────────────────────
+//  Map Click Handler
+// ───────────────────────────────────────────
+function onMapClick(prefId) {
+  if (placedSet.has(prefId)) return;
+
+  if (!selectedPiece) {
+    // Highlight the corresponding piece in panel
+    const pieceEl = document.getElementById(`piece-${prefId}`);
+    if (pieceEl) {
+      pieceEl.style.animation = 'none';
+      pieceEl.offsetHeight; // reflow
+      pieceEl.style.background = '#555';
+      setTimeout(() => { pieceEl.style.background = ''; }, 500);
+      pieceEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    return;
+  }
+
+  if (selectedPiece.id === prefId) {
+    placeCorrect(prefId);
+  } else {
+    placeWrong(prefId);
+  }
+}
+
+// ───────────────────────────────────────────
+//  Correct Placement
+// ───────────────────────────────────────────
+function placeCorrect(prefId) {
+  const pref = PREFECTURES.find(p => p.id === prefId);
+  placedSet.add(prefId);
+  placedCount++;
+
+  const color = REGION_INFO[pref.region].color;
+
+  // Color the map path
+  const pathEl = d3.select(`#map-pref-${prefId}`);
+  pathEl
+    .attr('fill', color)
+    .classed('placed-on-map', true)
+    .on('mouseover', null)
+    .on('mousemove', null)
+    .on('mouseout', null)
+    .on('click', null);
+
+  // Flash animation
+  const domEl = document.getElementById(`map-pref-${prefId}`);
+  if (domEl) {
+    domEl.classList.add('flash-correct');
+    setTimeout(() => domEl.classList.remove('flash-correct'), 500);
+  }
+
+  // Show label
+  d3.select(`#label-${prefId}`).classed('visible', true).style('opacity', 1);
+
+  // Mark piece as placed
+  const pieceEl = document.getElementById(`piece-${prefId}`);
+  if (pieceEl) {
+    pieceEl.classList.remove('selected');
+    pieceEl.classList.add('placed');
+    pieceEl.style.background = color;
+    pieceEl.style.borderColor = color;
+    pieceEl.style.color = 'white';
+  }
+
+  selectedPiece = null;
+  hideCursorLabel();
+  hideTooltip();
+
+  // Update progress
+  document.getElementById('placed-count').textContent = placedCount;
+  document.getElementById('progress-bar-fill').style.width = (placedCount / 47 * 100) + '%';
+  document.getElementById('progress-text').textContent = `${placedCount} / 47`;
+
+  if (placedCount === 47) setTimeout(showWin, 600);
+}
+
+// ───────────────────────────────────────────
+//  Wrong Placement
+// ───────────────────────────────────────────
+function placeWrong(prefId) {
+  // Flash the wrong prefecture red
+  const domPath = document.getElementById(`map-pref-${prefId}`);
+  if (domPath) {
+    domPath.style.fill = '#8b1a1a';
+    setTimeout(() => {
+      if (!placedSet.has(prefId)) domPath.style.fill = '#1e3a5f';
+    }, 400);
+  }
+
+  // Shake the selected piece
+  const pieceEl = document.querySelector('.piece.selected');
+  if (pieceEl) {
+    pieceEl.style.transform = 'translateX(-5px)';
+    setTimeout(() => pieceEl.style.transform = 'translateX(5px)',  100);
+    setTimeout(() => pieceEl.style.transform = 'translateX(-3px)', 200);
+    setTimeout(() => pieceEl.style.transform = 'translateX(0)',    300);
+  }
+}
+
+// ───────────────────────────────────────────
+//  Win Screen
+// ───────────────────────────────────────────
+function showWin() {
+  stopTimer();
+  document.getElementById('win-time-value').textContent = formatTime(seconds);
+  document.getElementById('win-screen').classList.add('active');
+}
+
+// ───────────────────────────────────────────
+//  Clear / Reset
+// ───────────────────────────────────────────
+function confirmClear() {
+  if (placedCount === 0) return; // nothing to clear
+  if (!confirm('リセットしますか？　配置済みの都道府県がすべてクリアされます。')) return;
+  restartGame();
+}
+
+function restartGame() {
+  placedSet.clear();
+  placedCount = 0;
+  selectedPiece = null;
+  hideCursorLabel();
+
+  document.getElementById('placed-count').textContent = '0';
+  document.getElementById('progress-bar-fill').style.width = '0%';
+  document.getElementById('progress-text').textContent = '0 / 47';
+  document.getElementById('win-screen').classList.remove('active');
+  document.getElementById('timer').textContent = '0:00';
+
+  // Reset all map paths
+  PREFECTURES.forEach(pref => {
+    const el = document.getElementById(`map-pref-${pref.id}`);
+    if (!el) return;
+    el.style.fill = '#1e3a5f';
+    el.removeAttribute('class');
+    el.setAttribute('class', 'prefecture');
+
+    const pathSel = d3.select(`#map-pref-${pref.id}`);
+    pathSel
+      .on('click', () => onMapClick(pref.id))
+      .on('mouseover', function(event) {
+        if (placedSet.has(pref.id)) return;
+        d3.select(this).attr('fill', '#5ab4e8');
+        showTooltip(event, pref.name);
+      })
+      .on('mousemove', showTooltipMove)
+      .on('mouseout', function() {
+        if (placedSet.has(pref.id)) return;
+        d3.select(this).attr('fill', '#1e3a5f');
+        hideTooltip();
+      });
+
+    d3.select(`#label-${pref.id}`)
+      .classed('visible', false)
+      .style('opacity', 0);
+  });
+
+  createPieces();
+  startTimer();
+}
+
+// ───────────────────────────────────────────
+//  Legend
+// ───────────────────────────────────────────
+function buildLegend() {
+  const legend = document.getElementById('legend');
+  Object.entries(REGION_INFO).forEach(([key, info]) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<div class="legend-color" style="background:${info.color}"></div>${info.label}`;
+    legend.appendChild(item);
+  });
+}
+
+// ───────────────────────────────────────────
+//  Load GeoJSON & Start
+// ───────────────────────────────────────────
+async function init() {
+  const GEO_URL = 'https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson';
+  try {
+    const res = await fetch(GEO_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    initMap(data);
+    createPieces();
+    startTimer();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('map-loading').innerHTML = `
+      <div style="color:#ff8888; max-width:380px; line-height:1.7;">
+        <p style="font-size:18px; margin-bottom:8px;">⚠ 地図データの読み込みに失敗しました</p>
+        <p style="font-size:13px; color:#9aabcc;">
+          インターネット接続が必要です。<br>
+          このファイルをブラウザで開いてご利用ください。<br><br>
+          <code style="font-size:11px; color:#ff8888;">${err.message}</code>
+        </p>
+      </div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
