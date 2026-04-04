@@ -646,17 +646,16 @@ function initMap(geojson) {
   const toFC = feats => ({ type: 'FeatureCollection', features: feats });
   const pad = 6;
 
-  // ── Layout: main map occupies right portion; insets overlaid in corners ──
+  // ── Layout: main map centered in full area; insets overlaid in corners ──
   const hkBox = { x: 10, y: 10, w: Math.round(W * 0.23), h: Math.round(H * 0.38) };
-  // Okinawa inset: bottom-right corner (ocean area, away from Kyushu)
-  const okBox = { x: W - Math.round(W * 0.13) - 10, y: H - Math.round(H * 0.24) - 10,
-                  w: Math.round(W * 0.13), h: Math.round(H * 0.24) };
+  // Okinawa inset: bottom-left corner (south of Kyushu, natural geographic position)
+  const okBox = { x: 10, y: H - Math.round(H * 0.26) - 10,
+                  w: Math.round(W * 0.14), h: Math.round(H * 0.26) };
 
   // ── Projections ──
-  // Main map starts to the right of the Hokkaido inset so western Japan labels stay visible
-  const mainLeft = hkBox.x + hkBox.w + 12;
+  // Main map fills the full SVG area so Honshu/Shikoku/Kyushu are centered
   const mainProj = d3.geoMercator()
-    .fitExtent([[mainLeft, 5], [W - 5, H - 30]], toFC(mainFeats));
+    .fitExtent([[10, 10], [W - 10, H - 40]], toFC(mainFeats));
   pathGen = d3.geoPath().projection(mainProj);
 
   const hkProj = d3.geoMercator()
@@ -889,8 +888,7 @@ function showWin() {
 //  Clear / Reset
 // ───────────────────────────────────────────
 function confirmClear() {
-  if (placedCount === 0) return; // nothing to clear
-  if (!confirm('リセットしますか？　配置済みの都道府県がすべてクリアされます。')) return;
+  if (placedCount === 0) return;
   restartGame();
 }
 
@@ -908,24 +906,22 @@ function restartGame() {
 
   // Reset all map paths
   PREFECTURES.forEach(pref => {
-    const el = document.getElementById(`map-pref-${pref.id}`);
-    if (!el) return;
-    el.style.fill = '#c8d8f4';
-    el.removeAttribute('class');
-    el.setAttribute('class', 'prefecture');
-
     const pathSel = d3.select(`#map-pref-${pref.id}`);
+    if (pathSel.empty()) return;
+
     pathSel
+      .attr('fill', '#c8d8f4')
+      .attr('class', 'prefecture')
       .on('click', () => onMapClick(pref.id))
       .on('mouseover', function(event) {
         if (placedSet.has(pref.id)) return;
-        d3.select(this).attr('fill', '#5ab4e8');
+        d3.select(this).attr('fill', '#48cae4');
         showTooltip(event, pref.name);
       })
       .on('mousemove', showTooltipMove)
       .on('mouseout', function() {
         if (placedSet.has(pref.id)) return;
-        d3.select(this).attr('fill', '#1e3a5f');
+        d3.select(this).attr('fill', '#c8d8f4');
         hideTooltip();
       });
 
