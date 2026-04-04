@@ -645,13 +645,17 @@ function initMap(geojson) {
   const toFC = feats => ({ type: 'FeatureCollection', features: feats });
   const pad = 6;
 
-  // ── Layout: main map fills entire area; insets overlaid as floating boxes ──
-  const hkBox = { x: 10, y: 10,                         w: Math.round(W * 0.23), h: Math.round(H * 0.38) };
-  const okBox = { x: 10, y: H - Math.round(H * 0.24) - 10, w: Math.round(W * 0.12), h: Math.round(H * 0.24) };
+  // ── Layout: main map occupies right portion; insets overlaid in corners ──
+  const hkBox = { x: 10, y: 10, w: Math.round(W * 0.23), h: Math.round(H * 0.38) };
+  // Okinawa inset: bottom-right corner (ocean area, away from Kyushu)
+  const okBox = { x: W - Math.round(W * 0.13) - 10, y: H - Math.round(H * 0.24) - 10,
+                  w: Math.round(W * 0.13), h: Math.round(H * 0.24) };
 
   // ── Projections ──
+  // Main map starts to the right of the Hokkaido inset so western Japan labels stay visible
+  const mainLeft = hkBox.x + hkBox.w + 12;
   const mainProj = d3.geoMercator()
-    .fitExtent([[8, 5], [W - 8, H - 30]], toFC(mainFeats));
+    .fitExtent([[mainLeft, 5], [W - 5, H - 30]], toFC(mainFeats));
   pathGen = d3.geoPath().projection(mainProj);
 
   const hkProj = d3.geoMercator()
