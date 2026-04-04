@@ -608,72 +608,65 @@ function initMap(geojson) {
     return (id && id >= 1 && id <= 47) ? id : null;
   }
 
+  // ── Filter out distant small islands from a feature's geometry ──
+  // Keeps only sub-polygons whose centroid is within main Japan's bounding box
+  function filterIslands(feature) {
+    const LON_MIN = 128, LON_MAX = 146, LAT_MIN = 30.0, LAT_MAX = 46;
+    function centroidInArea(ring) {
+      let sLon = 0, sLat = 0, n = ring.length;
+      ring.forEach(([lon, lat]) => { sLon += lon; sLat += lat; });
+      return sLon / n >= LON_MIN && sLon / n <= LON_MAX &&
+             sLat / n >= LAT_MIN && sLat / n <= LAT_MAX;
+    }
+    const geom = feature.geometry;
+    if (geom.type === 'Polygon') {
+      return centroidInArea(geom.coordinates[0]) ? feature : null;
+    } else if (geom.type === 'MultiPolygon') {
+      const kept = geom.coordinates.filter(poly => centroidInArea(poly[0]));
+      if (kept.length === 0) return null;
+      return { ...feature, geometry: { type: 'MultiPolygon', coordinates: kept } };
+    }
+    return feature;
+  }
+
   // ── Categorize features ──
-  const mainFeats = [], hkFeats = [], okFeats = [];
+  const hkFeats = [], okFeats = [], mainFeats = [];
   geojson.features.forEach(f => {
     const id = getPrefId(f);
     if (!id) return;
     geoFeatures[id] = f;
-    if      (id === 1)  hkFeats.push(f);
-    else if (id === 47) okFeats.push(f);
-    else                mainFeats.push(f);
+    if (id === 1)  { hkFeats.push(f); return; }
+    if (id === 47) { okFeats.push(f); return; }
+    // Filter remote islands (Ogasawara, Amami etc.)
+    const filtered = filterIslands(f);
+    if (filtered) mainFeats.push(filtered);
   });
 
   const toFC = feats => ({ type: 'FeatureCollection', features: feats });
-
-  // ── Layout: inset boxes ──
-  const hkBox = { x: 10, y: 10, w: Math.round(W * 0.27), h: Math.round(H * 0.42) };
-  const okBox = { x: 10, y: H - Math.round(H * 0.26) - 10, w: Math.round(W * 0.14), h: Math.round(H * 0.26) };
   const pad = 6;
-  const labelH = 16;
 
-  // Main map occupies right portion
-  const mainX1 = hkBox.x + hkBox.w + 14;
-  const mainX2 = W - 5;
-  const mainY1 = 5;
-  const mainY2 = H - 30;
+  // ── Layout: main map fills entire area; insets overlaid as floating boxes ──
+  const hkBox = { x: 10, y: 10,                         w: Math.round(W * 0.23), h: Math.round(H * 0.38) };
+  const okBox = { x: 10, y: H - Math.round(H * 0.24) - 10, w: Math.round(W * 0.12), h: Math.round(H * 0.24) };
 
   // ── Projections ──
   const mainProj = d3.geoMercator()
-    .fitExtent([[mainX1, mainY1], [mainX2, mainY2]], toFC(mainFeats));
+    .fitExtent([[8, 5], [W - 8, H - 30]], toFC(mainFeats));
   pathGen = d3.geoPath().projection(mainProj);
 
   const hkProj = d3.geoMercator()
-    .fitExtent(
-      [[hkBox.x + pad, hkBox.y + pad + labelH],
-       [hkBox.x + hkBox.w - pad, hkBox.y + hkBox.h - pad]],
+    .fitExtent([[hkBox.x + pad, hkBox.y + pad], [hkBox.x + hkBox.w - pad, hkBox.y + hkBox.h - pad]],
       toFC(hkFeats));
   const hkPathGen = d3.geoPath().projection(hkProj);
   prefPathGens[1] = hkPathGen;
 
   const okProj = d3.geoMercator()
-    .fitExtent(
-      [[okBox.x + pad, okBox.y + pad + labelH],
-       [okBox.x + okBox.w - pad, okBox.y + okBox.h - pad]],
+    .fitExtent([[okBox.x + pad, okBox.y + pad], [okBox.x + okBox.w - pad, okBox.y + okBox.h - pad]],
       toFC(okFeats));
   const okPathGen = d3.geoPath().projection(okProj);
   prefPathGens[47] = okPathGen;
 
-  // ── Draw inset borders (behind prefectures) ──
-  function drawInsetBox(box, label) {
-    svg.append('rect')
-      .attr('x', box.x).attr('y', box.y)
-      .attr('width', box.w).attr('height', box.h)
-      .attr('fill', 'rgba(180,210,240,0.2)')
-      .attr('stroke', '#8fa8d8').attr('stroke-width', 1.5)
-      .attr('rx', 5);
-    svg.append('text')
-      .attr('x', box.x + box.w / 2).attr('y', box.y + 13)
-      .attr('text-anchor', 'middle')
-      .attr('font-size', '11px').attr('fill', '#5a6890')
-      .attr('font-family', "'Hiragino Sans','Meiryo',sans-serif")
-      .attr('font-weight', 'bold')
-      .text(label);
-  }
-  drawInsetBox(hkBox, '北海道');
-  drawInsetBox(okBox, '沖縄');
-
-  // ── Draw prefecture paths ──
+  // ── Draw prefecture paths (main map first, then insets on top) ──
   const g = svg.append('g').attr('id', 'prefectures');
 
   function drawPref(feature, prefId, pg) {
@@ -714,6 +707,19 @@ function initMap(geojson) {
     const id = getPrefId(f);
     if (id) drawPref(f, id, pathGen);
   });
+
+  // ── Draw inset borders (overlaid on top of main map, no text labels) ──
+  function drawInsetBox(box) {
+    svg.append('rect')
+      .attr('x', box.x).attr('y', box.y)
+      .attr('width', box.w).attr('height', box.h)
+      .attr('fill', 'rgba(232,240,252,0.92)')
+      .attr('stroke', '#8fa8d8').attr('stroke-width', 1.5)
+      .attr('rx', 5);
+  }
+  drawInsetBox(hkBox);
+  drawInsetBox(okBox);
+
   hkFeats.forEach(f  => drawPref(f, 1,  hkPathGen));
   okFeats.forEach(f  => drawPref(f, 47, okPathGen));
 
