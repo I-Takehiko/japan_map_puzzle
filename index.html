@@ -670,11 +670,10 @@ function initMap(geojson) {
   const okPathGen = d3.geoPath().projection(okProj);
   prefPathGens[47] = okPathGen;
 
-  // ── drawPref: append path+label to a given SVG group ──
-  function drawPref(group, feature, prefId, pg) {
+  // ── パスを描画する関数 ──
+  function drawPrefPath(group, feature, prefId, pg) {
     const pref = PREFECTURES.find(pr => pr.id === prefId);
     if (!pref) return;
-
     group.append('path')
       .datum(feature)
       .attr('d', pg)
@@ -692,7 +691,12 @@ function initMap(geojson) {
         d3.select(this).attr('fill', '#c8d8f4');
         hideTooltip();
       });
+  }
 
+  // ── ラベルを描画する関数 ──
+  function drawPrefLabel(group, feature, prefId, pg) {
+    const pref = PREFECTURES.find(pr => pr.id === prefId);
+    if (!pref) return;
     const centroid = pg.centroid(feature);
     if (!isNaN(centroid[0])) {
       group.append('text')
@@ -704,14 +708,15 @@ function initMap(geojson) {
     }
   }
 
-  // 1) Main prefecture paths (background layer)
+  // ── 描画順序：パス → インセット枠 → インセットパス → 全ラベル ──
+  // 1) メインマップのパス（最背面）
   const gMain = svg.append('g').attr('id', 'prefectures');
   mainFeats.forEach(f => {
     const id = getPrefId(f);
-    if (id) drawPref(gMain, f, id, pathGen);
+    if (id) drawPrefPath(gMain, f, id, pathGen);
   });
 
-  // 2) Inset box backgrounds (on top of main map, covering that area)
+  // 2) インセット枠の背景（メインマップの上）
   function drawInsetBox(box) {
     svg.append('rect')
       .attr('x', box.x).attr('y', box.y)
@@ -723,10 +728,19 @@ function initMap(geojson) {
   drawInsetBox(hkBox);
   drawInsetBox(okBox);
 
-  // 3) Hokkaido / Okinawa paths on top of their inset backgrounds
+  // 3) 北海道・沖縄のパス（インセット枠の上）
   const gInset = svg.append('g').attr('id', 'prefectures-inset');
-  hkFeats.forEach(f => drawPref(gInset, f, 1,  hkPathGen));
-  okFeats.forEach(f => drawPref(gInset, f, 47, okPathGen));
+  hkFeats.forEach(f => drawPrefPath(gInset, f, 1,  hkPathGen));
+  okFeats.forEach(f => drawPrefPath(gInset, f, 47, okPathGen));
+
+  // 4) 全都道府県のラベル（最前面 — インセット枠に隠れない）
+  const gLabels = svg.append('g').attr('id', 'prefecture-labels');
+  mainFeats.forEach(f => {
+    const id = getPrefId(f);
+    if (id) drawPrefLabel(gLabels, f, id, pathGen);
+  });
+  hkFeats.forEach(f => drawPrefLabel(gLabels, f, 1,  hkPathGen));
+  okFeats.forEach(f => drawPrefLabel(gLabels, f, 47, okPathGen));
 
   // Build legend
   buildLegend();
