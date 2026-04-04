@@ -666,14 +666,12 @@ function initMap(geojson) {
   const okPathGen = d3.geoPath().projection(okProj);
   prefPathGens[47] = okPathGen;
 
-  // ── Draw prefecture paths (main map first, then insets on top) ──
-  const g = svg.append('g').attr('id', 'prefectures');
-
-  function drawPref(feature, prefId, pg) {
+  // ── drawPref: append path+label to a given SVG group ──
+  function drawPref(group, feature, prefId, pg) {
     const pref = PREFECTURES.find(pr => pr.id === prefId);
     if (!pref) return;
 
-    g.append('path')
+    group.append('path')
       .datum(feature)
       .attr('d', pg)
       .attr('class', 'prefecture')
@@ -691,10 +689,9 @@ function initMap(geojson) {
         hideTooltip();
       });
 
-    // Label (hidden until placed)
     const centroid = pg.centroid(feature);
     if (!isNaN(centroid[0])) {
-      g.append('text')
+      group.append('text')
         .attr('class', 'pref-label')
         .attr('id', `label-${prefId}`)
         .attr('x', centroid[0])
@@ -703,12 +700,14 @@ function initMap(geojson) {
     }
   }
 
+  // 1) Main prefecture paths (background layer)
+  const gMain = svg.append('g').attr('id', 'prefectures');
   mainFeats.forEach(f => {
     const id = getPrefId(f);
-    if (id) drawPref(f, id, pathGen);
+    if (id) drawPref(gMain, f, id, pathGen);
   });
 
-  // ── Draw inset borders (overlaid on top of main map, no text labels) ──
+  // 2) Inset box backgrounds (on top of main map, covering that area)
   function drawInsetBox(box) {
     svg.append('rect')
       .attr('x', box.x).attr('y', box.y)
@@ -720,8 +719,10 @@ function initMap(geojson) {
   drawInsetBox(hkBox);
   drawInsetBox(okBox);
 
-  hkFeats.forEach(f  => drawPref(f, 1,  hkPathGen));
-  okFeats.forEach(f  => drawPref(f, 47, okPathGen));
+  // 3) Hokkaido / Okinawa paths on top of their inset backgrounds
+  const gInset = svg.append('g').attr('id', 'prefectures-inset');
+  hkFeats.forEach(f => drawPref(gInset, f, 1,  hkPathGen));
+  okFeats.forEach(f => drawPref(gInset, f, 47, okPathGen));
 
   // Build legend
   buildLegend();
