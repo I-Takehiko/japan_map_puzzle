@@ -485,6 +485,7 @@ let seconds       = 0;
 let timerInterval = null;
 let pathGen       = null;
 let geoFeatures   = {};     // id → GeoJSON feature
+const prefPathGens = {};    // id → pathGen (for inset prefectures)
 
 // ───────────────────────────────────────────
 //  Timer
@@ -580,53 +581,108 @@ function hideCursorLabel() {
 function initMap(geojson) {
   const container = document.getElementById('map-container');
   const rect = container.getBoundingClientRect();
-  const W = rect.width  || 720;
+  const W = rect.width  || 800;
   const H = rect.height || 580;
 
   const svg = d3.select('#map-svg')
     .attr('width',  W)
     .attr('height', H);
 
-  const projection = d3.geoMercator()
-    .fitExtent([[10, 10], [W - 10, H - 30]], geojson);
+  // ── Helper: resolve prefecture ID from GeoJSON feature ──
+  function getPrefId(feature) {
+    let id = null;
+    const p = feature.properties || {};
+    id =
+      p.id       !== undefined ? +p.id :
+      p.N03_001  !== undefined ? null  :
+      feature.id !== undefined ? +feature.id :
+      null;
+    if (!id && p.nam_ja) {
+      const m = PREFECTURES.find(pr => pr.name === p.nam_ja);
+      if (m) id = m.id;
+    }
+    if (!id && p.name) {
+      const m = PREFECTURES.find(pr => pr.name === p.name || pr.en === p.name);
+      if (m) id = m.id;
+    }
+    return (id && id >= 1 && id <= 47) ? id : null;
+  }
 
-  pathGen = d3.geoPath().projection(projection);
+  // ── Categorize features ──
+  const mainFeats = [], hkFeats = [], okFeats = [];
+  geojson.features.forEach(f => {
+    const id = getPrefId(f);
+    if (!id) return;
+    geoFeatures[id] = f;
+    if      (id === 1)  hkFeats.push(f);
+    else if (id === 47) okFeats.push(f);
+    else                mainFeats.push(f);
+  });
 
+  const toFC = feats => ({ type: 'FeatureCollection', features: feats });
+
+  // ── Layout: inset boxes ──
+  const hkBox = { x: 10, y: 10, w: Math.round(W * 0.27), h: Math.round(H * 0.42) };
+  const okBox = { x: 10, y: H - Math.round(H * 0.26) - 10, w: Math.round(W * 0.14), h: Math.round(H * 0.26) };
+  const pad = 6;
+  const labelH = 16;
+
+  // Main map occupies right portion
+  const mainX1 = hkBox.x + hkBox.w + 14;
+  const mainX2 = W - 5;
+  const mainY1 = 5;
+  const mainY2 = H - 30;
+
+  // ── Projections ──
+  const mainProj = d3.geoMercator()
+    .fitExtent([[mainX1, mainY1], [mainX2, mainY2]], toFC(mainFeats));
+  pathGen = d3.geoPath().projection(mainProj);
+
+  const hkProj = d3.geoMercator()
+    .fitExtent(
+      [[hkBox.x + pad, hkBox.y + pad + labelH],
+       [hkBox.x + hkBox.w - pad, hkBox.y + hkBox.h - pad]],
+      toFC(hkFeats));
+  const hkPathGen = d3.geoPath().projection(hkProj);
+  prefPathGens[1] = hkPathGen;
+
+  const okProj = d3.geoMercator()
+    .fitExtent(
+      [[okBox.x + pad, okBox.y + pad + labelH],
+       [okBox.x + okBox.w - pad, okBox.y + okBox.h - pad]],
+      toFC(okFeats));
+  const okPathGen = d3.geoPath().projection(okProj);
+  prefPathGens[47] = okPathGen;
+
+  // ── Draw inset borders (behind prefectures) ──
+  function drawInsetBox(box, label) {
+    svg.append('rect')
+      .attr('x', box.x).attr('y', box.y)
+      .attr('width', box.w).attr('height', box.h)
+      .attr('fill', 'rgba(180,210,240,0.2)')
+      .attr('stroke', '#8fa8d8').attr('stroke-width', 1.5)
+      .attr('rx', 5);
+    svg.append('text')
+      .attr('x', box.x + box.w / 2).attr('y', box.y + 13)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '11px').attr('fill', '#5a6890')
+      .attr('font-family', "'Hiragino Sans','Meiryo',sans-serif")
+      .attr('font-weight', 'bold')
+      .text(label);
+  }
+  drawInsetBox(hkBox, '北海道');
+  drawInsetBox(okBox, '沖縄');
+
+  // ── Draw prefecture paths ──
   const g = svg.append('g').attr('id', 'prefectures');
 
-  geojson.features.forEach(feature => {
-    // Resolve prefecture ID from feature properties
-    let prefId = null;
-
-    // Try common property keys
-    const p = feature.properties || {};
-    prefId =
-      p.id        !== undefined ? +p.id :
-      p.N03_001   !== undefined ? null  : // different schema
-      feature.id  !== undefined ? +feature.id :
-      null;
-
-    // Fallback: match by Japanese name
-    if (!prefId && p.nam_ja) {
-      const match = PREFECTURES.find(pr => pr.name === p.nam_ja);
-      if (match) prefId = match.id;
-    }
-    if (!prefId && p.name) {
-      const match = PREFECTURES.find(pr => pr.name === p.name || pr.en === p.name);
-      if (match) prefId = match.id;
-    }
-
-    if (!prefId || prefId < 1 || prefId > 47) return;
-
-    geoFeatures[prefId] = feature;
-
+  function drawPref(feature, prefId, pg) {
     const pref = PREFECTURES.find(pr => pr.id === prefId);
     if (!pref) return;
 
-    // Draw path
     g.append('path')
       .datum(feature)
-      .attr('d', pathGen)
+      .attr('d', pg)
       .attr('class', 'prefecture')
       .attr('id', `map-pref-${prefId}`)
       .on('click', () => onMapClick(prefId))
@@ -643,7 +699,7 @@ function initMap(geojson) {
       });
 
     // Label (hidden until placed)
-    const centroid = pathGen.centroid(feature);
+    const centroid = pg.centroid(feature);
     if (!isNaN(centroid[0])) {
       g.append('text')
         .attr('class', 'pref-label')
@@ -652,7 +708,14 @@ function initMap(geojson) {
         .attr('y', centroid[1])
         .text(pref.name.replace('県','').replace('府','').replace('都','').replace('道',''));
     }
+  }
+
+  mainFeats.forEach(f => {
+    const id = getPrefId(f);
+    if (id) drawPref(f, id, pathGen);
   });
+  hkFeats.forEach(f  => drawPref(f, 1,  hkPathGen));
+  okFeats.forEach(f  => drawPref(f, 47, okPathGen));
 
   // Build legend
   buildLegend();
