@@ -927,7 +927,7 @@ function restartGame() {
     if (pathSel.empty()) return;
 
     pathSel
-      .attr('fill', '#c8d8f4')
+      .style('fill', null)
       .attr('class', 'prefecture')
       .on('click', () => onMapClick(pref.id))
       .on('mouseover', function(event) {
