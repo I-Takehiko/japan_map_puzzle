@@ -342,6 +342,40 @@
       box-shadow: 0 3px 10px rgba(102,126,234,0.4);
     }
 
+    /* ── Mode Toggle ── */
+    #mode-toggle {
+      display: flex;
+      gap: 3px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 3px;
+    }
+
+    .mode-btn {
+      padding: 5px 14px;
+      background: transparent;
+      color: rgba(255,255,255,0.75);
+      border: none;
+      border-radius: 16px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+      white-space: nowrap;
+      font-weight: 500;
+    }
+
+    .mode-btn.active {
+      background: rgba(255,255,255,0.9);
+      color: #667eea;
+      font-weight: 700;
+    }
+
+    .mode-btn:hover:not(.active) {
+      background: rgba(255,255,255,0.25);
+      color: #fff;
+    }
+
     /* ── Region Legend ── */
     #legend {
       position: absolute;
@@ -390,6 +424,10 @@
       <span class="stat-label">タイム</span>
     </div>
   </div>
+  <div id="mode-toggle">
+    <button class="mode-btn active" id="mode-btn-pref" onclick="switchMode('prefecture')">都道府県</button>
+    <button class="mode-btn"        id="mode-btn-cap"  onclick="switchMode('capital')">県庁所在地</button>
+  </div>
   <div id="instruction">
     ① 左の都道府県名をクリック → ② 地図上の正しい場所をクリック
   </div>
@@ -421,7 +459,7 @@
 <div id="win-screen">
   <div class="win-firework">🎊</div>
   <h2>完　成！</h2>
-  <div class="win-sub">全47都道府県を配置しました！</div>
+  <div class="win-sub" id="win-sub-text">全47都道府県を配置しました！</div>
   <div class="win-time-label">クリアタイム</div>
   <div class="win-time-value" id="win-time-value">—</div>
   <button id="restart-btn" onclick="restartGame()">もう一度プレイ ↺</button>
@@ -481,6 +519,56 @@ const PREFECTURES = [
   {id:47, name:'沖縄県',   kana:'おきなわ',     en:'Okinawa',     region:'ryukyu'},
 ];
 
+const CAPITALS = {
+  1:  { name:'札幌市',     kana:'さっぽろ'   },
+  2:  { name:'青森市',     kana:'あおもり'   },
+  3:  { name:'盛岡市',     kana:'もりおか'   },
+  4:  { name:'仙台市',     kana:'せんだい'   },
+  5:  { name:'秋田市',     kana:'あきた'     },
+  6:  { name:'山形市',     kana:'やまがた'   },
+  7:  { name:'福島市',     kana:'ふくしま'   },
+  8:  { name:'水戸市',     kana:'みと'       },
+  9:  { name:'宇都宮市',   kana:'うつのみや' },
+  10: { name:'前橋市',     kana:'まえばし'   },
+  11: { name:'さいたま市', kana:'さいたま'   },
+  12: { name:'千葉市',     kana:'ちば'       },
+  13: { name:'新宿区',     kana:'しんじゅく' },
+  14: { name:'横浜市',     kana:'よこはま'   },
+  15: { name:'新潟市',     kana:'にいがた'   },
+  16: { name:'富山市',     kana:'とやま'     },
+  17: { name:'金沢市',     kana:'かなざわ'   },
+  18: { name:'福井市',     kana:'ふくい'     },
+  19: { name:'甲府市',     kana:'こうふ'     },
+  20: { name:'長野市',     kana:'ながの'     },
+  21: { name:'岐阜市',     kana:'ぎふ'       },
+  22: { name:'静岡市',     kana:'しずおか'   },
+  23: { name:'名古屋市',   kana:'なごや'     },
+  24: { name:'津市',       kana:'つ'         },
+  25: { name:'大津市',     kana:'おおつ'     },
+  26: { name:'京都市',     kana:'きょうと'   },
+  27: { name:'大阪市',     kana:'おおさか'   },
+  28: { name:'神戸市',     kana:'こうべ'     },
+  29: { name:'奈良市',     kana:'なら'       },
+  30: { name:'和歌山市',   kana:'わかやま'   },
+  31: { name:'鳥取市',     kana:'とっとり'   },
+  32: { name:'松江市',     kana:'まつえ'     },
+  33: { name:'岡山市',     kana:'おかやま'   },
+  34: { name:'広島市',     kana:'ひろしま'   },
+  35: { name:'山口市',     kana:'やまぐち'   },
+  36: { name:'徳島市',     kana:'とくしま'   },
+  37: { name:'高松市',     kana:'たかまつ'   },
+  38: { name:'松山市',     kana:'まつやま'   },
+  39: { name:'高知市',     kana:'こうち'     },
+  40: { name:'福岡市',     kana:'ふくおか'   },
+  41: { name:'佐賀市',     kana:'さが'       },
+  42: { name:'長崎市',     kana:'ながさき'   },
+  43: { name:'熊本市',     kana:'くまもと'   },
+  44: { name:'大分市',     kana:'おおいた'   },
+  45: { name:'宮崎市',     kana:'みやざき'   },
+  46: { name:'鹿児島市',   kana:'かごしま'   },
+  47: { name:'那覇市',     kana:'なは'       },
+};
+
 const REGION_INFO = {
   hokkaido: { label:'北海道',  color:'#ff4d8d' },
   tohoku:   { label:'東北',    color:'#9c42f5' },
@@ -496,6 +584,7 @@ const REGION_INFO = {
 // ───────────────────────────────────────────
 //  Game State
 // ───────────────────────────────────────────
+let currentMode   = 'prefecture'; // 'prefecture' | 'capital'
 let selectedPiece = null;   // { id, name, region }
 let placedSet     = new Set();
 let placedCount   = 0;
@@ -552,7 +641,10 @@ function createPieces() {
   shuffled.forEach(pref => {
     const el = document.createElement('div');
     el.className = 'piece';
-    el.innerHTML = `<span class="piece-kana">${pref.kana}</span><span class="piece-name">${pref.name}</span>`;
+    const isCapMode = currentMode === 'capital';
+    const dispName = isCapMode ? CAPITALS[pref.id].name : pref.name;
+    const dispKana = isCapMode ? CAPITALS[pref.id].kana : pref.kana;
+    el.innerHTML = `<span class="piece-kana">${dispKana}</span><span class="piece-name">${dispName}</span>`;
     el.dataset.id = pref.id;
     el.id = `piece-${pref.id}`;
     el.addEventListener('click', () => onPieceClick(pref, el));
@@ -586,7 +678,9 @@ document.addEventListener('mousemove', e => {
   cursorLabel.style.left = e.clientX + 'px';
   cursorLabel.style.top  = e.clientY + 'px';
   cursorLabel.style.display = 'block';
-  cursorLabel.textContent = selectedPiece.name;
+  cursorLabel.textContent = currentMode === 'capital'
+    ? CAPITALS[selectedPiece.id].name
+    : selectedPiece.name;
 });
 
 function hideCursorLabel() {
@@ -700,7 +794,8 @@ function initMap(geojson) {
       .on('mouseover', function(event) {
         if (placedSet.has(prefId)) return;
         d3.select(this).attr('fill', '#48cae4');
-        showTooltip(event, pref.name);
+        const tipName = currentMode === 'capital' ? CAPITALS[prefId].name : pref.name;
+        showTooltip(event, tipName);
       })
       .on('mousemove', showTooltipMove)
       .on('mouseout', function() {
@@ -895,9 +990,29 @@ function placeWrong(prefId) {
 // ───────────────────────────────────────────
 //  Win Screen
 // ───────────────────────────────────────────
+// ───────────────────────────────────────────
+//  Mode Switch
+// ───────────────────────────────────────────
+function switchMode(mode) {
+  if (currentMode === mode) return;
+  currentMode = mode;
+
+  document.getElementById('mode-btn-pref').classList.toggle('active', mode === 'prefecture');
+  document.getElementById('mode-btn-cap').classList.toggle('active',  mode === 'capital');
+
+  const instr = document.getElementById('instruction');
+  instr.innerHTML = mode === 'capital'
+    ? '① 左の県庁所在地をクリック → ② 地図上の正しい都道府県をクリック'
+    : '① 左の都道府県名をクリック → ② 地図上の正しい場所をクリック';
+
+  restartGame();
+}
+
 function showWin() {
   stopTimer();
   document.getElementById('win-time-value').textContent = formatTime(seconds);
+  document.getElementById('win-sub-text').textContent =
+    currentMode === 'capital' ? '全47県庁所在地を配置しました！' : '全47都道府県を配置しました！';
   document.getElementById('win-screen').classList.add('active');
 }
 
@@ -933,7 +1048,8 @@ function restartGame() {
       .on('mouseover', function(event) {
         if (placedSet.has(pref.id)) return;
         d3.select(this).attr('fill', '#48cae4');
-        showTooltip(event, pref.name);
+        const tipName = currentMode === 'capital' ? CAPITALS[pref.id].name : pref.name;
+        showTooltip(event, tipName);
       })
       .on('mousemove', showTooltipMove)
       .on('mouseout', function() {
